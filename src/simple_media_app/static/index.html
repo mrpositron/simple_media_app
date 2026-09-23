@@ -20,7 +20,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: 15px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
   main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
@@ -54,6 +54,21 @@
   }
   .chips button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   video { width: 100%; max-height: 50vh; border-radius: 8px; background: #000; }
+  /* Drop zone: the whole label opens the picker; the input stays in the layout so `required` can still point at it. */
+  .drop {
+    position: relative; align-items: center; text-align: center; gap: 2px; padding: 22px 16px;
+    border: 2px dashed var(--border); border-radius: 10px; background: var(--input);
+    cursor: pointer; font-weight: 400; transition: border-color .15s, background-color .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); }
+  .drop.over { background: color-mix(in srgb, var(--accent) 12%, var(--input)); }
+  .drop:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop input { position: absolute; left: 50%; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; }
+  .drop b { color: var(--accent); }
+  .drop-name { overflow-wrap: anywhere; }
+  .preview { display: none; flex-direction: column; gap: 6px; margin: 0; }
+  .preview.shown { display: flex; }
+  .preview img { align-self: center; max-width: 100%; max-height: 50vh; object-fit: contain; border-radius: 8px; }
   .editor, .manual { display: none; flex-direction: column; gap: 10px; }
   #edit.has-preview .editor, #edit.no-preview .manual { display: flex; }
   /* Timeline: padding leaves room for the handles, which sit just outside the selection. */
@@ -112,7 +127,12 @@
   </nav>
 
   <form id="image" class="active" data-url="/api/image/compress">
-    <label>Image <input type="file" name="file" accept="image/*" required></label>
+    <label class="drop" data-kind="an image">
+      <input type="file" name="file" accept="image/*" required>
+      <span class="drop-text"><b>Choose an image</b> or drop it here</span>
+      <span class="drop-name hint"></span>
+    </label>
+    <figure class="preview"><img alt="Preview of the chosen image"><figcaption class="hint"></figcaption></figure>
     <label>Quality: <span data-out="quality">75</span>
       <input type="range" name="quality" min="10" max="100" value="75">
       <span class="hint">Lower is smaller. 70–80 is usually indistinguishable. For PNG, below 95 reduces colors (lossy); 95+ is lossless.</span>
@@ -133,7 +153,12 @@
   </form>
 
   <form id="vcompress" data-url="/api/video/compress">
-    <label>Video <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required></label>
+    <label class="drop" data-kind="a video">
+      <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required>
+      <span class="drop-text"><b>Choose a video</b> or drop it here</span>
+      <span class="drop-name hint"></span>
+    </label>
+    <figure class="preview"><video controls playsinline muted></video><figcaption class="hint"></figcaption></figure>
     <label>Compression (CRF): <span data-out="crf">28</span>
       <input type="range" name="crf" min="18" max="40" value="28">
       <span class="hint">Higher is smaller with lower quality. 23 is high quality, 28 is a good default.</span>
@@ -152,7 +177,11 @@
   </form>
 
   <form id="edit" data-url="/api/video/trim">
-    <label>Video <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required></label>
+    <label class="drop" data-kind="a video">
+      <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required>
+      <span class="drop-text"><b>Choose a video</b> or drop it here</span>
+      <span class="drop-name hint"></span>
+    </label>
     <div class="editor">
       <video controls playsinline></video>
       <div class="timeline">
@@ -226,12 +255,91 @@ $$("input[type=range]").forEach(r => {
   r.addEventListener("input", () => out.textContent = r.value);
 });
 
-// Trim & speed editor
 const fmtTime = s => {
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = (s % 60).toFixed(2).padStart(5, "0");
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${sec}`;
 };
 const fmtLen = s => s < 60 ? `${s.toFixed(2)} s` : fmtTime(s);
+const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(0) + " KB";
+const showError = (form, msg) => { const r = $(".result", form); r.className = "result err"; r.textContent = msg; };
+
+// File pickers: show the chosen file's name and size in the drop zone.
+$$(".drop").forEach(drop => {
+  const input = $("input", drop), text = $(".drop-text", drop), name = $(".drop-name", drop), initial = text.innerHTML;
+  input.addEventListener("change", () => {
+    const f = input.files[0];
+    text.innerHTML = f ? "Drop another file or <b>click to replace</b>" : initial;
+    name.textContent = f ? `${f.name} · ${fmtSize(f.size)}` : "";
+    const result = $(".result", input.form);
+    result.className = "result";
+    result.textContent = "";
+  });
+});
+
+// Previews for the compress tabs (the trim tab has its own editor below).
+function preview(form, describe) {
+  const input = $("[name=file]", form), fig = $(".preview", form), media = fig.firstElementChild, caption = $("figcaption", fig);
+  input.addEventListener("change", () => {
+    const f = input.files[0];
+    if (media.getAttribute("src")) URL.revokeObjectURL(media.src);
+    fig.classList.toggle("shown", !!f);
+    caption.textContent = "";
+    media.hidden = false;
+    if (f) media.src = URL.createObjectURL(f);
+    else { media.removeAttribute("src"); media.load?.(); }
+  });
+  media.addEventListener(media.tagName === "IMG" ? "load" : "loadedmetadata", () => { caption.textContent = describe(media); });
+  // Some formats (e.g. HEIC images, HEVC .mov in Chrome) can't be previewed; compressing still works.
+  media.addEventListener("error", () => {
+    if (!media.getAttribute("src")) return;
+    media.hidden = true;
+    caption.textContent = "Your browser can't preview this file. Compressing still works.";
+  });
+}
+preview($("#image"), img => `${img.naturalWidth} × ${img.naturalHeight} px`);
+preview($("#vcompress"), v => [
+  v.videoWidth && `${v.videoWidth} × ${v.videoHeight}`,
+  isFinite(v.duration) && fmtLen(v.duration),
+].filter(Boolean).join(" · "));
+
+// Drag & drop: a file dropped anywhere on the page goes to the active tab.
+// Without this the browser would open the file and leave the app.
+const accepts = (input, f) => input.accept.split(",").some(a => {
+  a = a.trim().toLowerCase();
+  return a.endsWith("/*") ? f.type.startsWith(a.slice(0, -1))
+    : a.startsWith(".") ? f.name.toLowerCase().endsWith(a) : f.type === a;
+});
+const hasFiles = e => e.dataTransfer?.types.includes("Files");
+const activeDrop = () => $("form.active .drop");
+let dragDepth = 0;  // dragenter/dragleave fire for every child element crossed
+document.addEventListener("dragenter", e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (dragDepth++ === 0) activeDrop().classList.add("over");
+});
+document.addEventListener("dragover", e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+});
+document.addEventListener("dragleave", e => {
+  if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; activeDrop().classList.remove("over"); }
+});
+document.addEventListener("drop", e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  const drop = activeDrop(), input = $("input", drop), f = e.dataTransfer.files[0];
+  drop.classList.remove("over");
+  if (!f) return;
+  if (!accepts(input, f)) return showError(input.form, `“${f.name}” isn't ${drop.dataset.kind}. Drop ${drop.dataset.kind} file here.`);
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+});
+
+// Trim & speed editor
 const once = (el, ev) => new Promise((resolve, reject) => {
   el.addEventListener(ev, resolve, { once: true });
   el.addEventListener("error", reject, { once: true });
@@ -392,7 +500,6 @@ chips.forEach(c => c.addEventListener("click", () => { factorInput.value = c.dat
 factorInput.addEventListener("input", onSpeed);
 
 // Submit
-const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(0) + " KB";
 const lastUrls = new Map();
 
 $$("form").forEach(form => form.addEventListener("submit", async e => {
@@ -434,8 +541,7 @@ $$("form").forEach(form => form.addEventListener("submit", async e => {
     const a = Object.assign(document.createElement("a"), { href: url, download: filename, textContent: `Download ${filename}` });
     result.append(a, ` — ${fmtSize(before)} → ${fmtSize(after)} (${change})`);
   } catch (err) {
-    result.className = "result err";
-    result.textContent = err.message;
+    showError(form, err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = label;
