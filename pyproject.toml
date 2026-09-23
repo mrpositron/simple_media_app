@@ -1,0 +1,28 @@
+[project]
+name = "simple-media-app"
+version = "0.1.0"
+description = "Local web app to compress images and compress, speed up, and trim videos."
+readme = "README.md"
+authors = [
+    { name = "mrpositron", email = "42044624+mrpositron@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "pillow>=12.3.0",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.53.0",
+]
+
+[project.scripts]
+media-app = "simple_media_app.main:run"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "pytest>=9.1.1",
+]

@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple Media App</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --border: #e2e2dc; --accent: #2f6fed; --accent-text: #ffffff;
+    --ok: #1f8a4c; --err: #c23b30; --input: #fbfbf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --card: #1f1f1d; --text: #ececea; --muted: #9a9a94;
+      --border: #33332f; --accent: #5b8cff; --accent-text: #0b0b0a;
+      --ok: #4cc27f; --err: #ff7a6e; --input: #262624;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+  nav button {
+    background: none; border: none; color: var(--muted); font: inherit; padding: 8px 12px;
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  form {
+    display: none; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; gap: 16px; flex-direction: column;
+  }
+  form.active { display: flex; }
+  label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
+  .hint { color: var(--muted); font-weight: 400; font-size: 13px; }
+  input, select {
+    font: inherit; color: var(--text); background: var(--input);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  input[type=range] { padding: 0; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); }
+  .row { display: flex; gap: 12px; }
+  .row > * { flex: 1; min-width: 0; }
+  .check { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips button {
+    font: inherit; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--input); color: var(--text);
+  }
+  .chips button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  video { width: 100%; max-height: 50vh; border-radius: 8px; background: #000; }
+  .editor, .manual { display: none; flex-direction: column; gap: 10px; }
+  #edit.has-preview .editor, #edit.no-preview .manual { display: flex; }
+  /* Timeline: padding leaves room for the handles, which sit just outside the selection. */
+  .timeline { padding: 0 14px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }
+  .track { position: relative; height: 56px; }
+  .film {
+    position: absolute; inset: 0; overflow: hidden; border-radius: 4px;
+    background: var(--input); border: 1px solid var(--border);
+  }
+  .film canvas { width: 100%; height: 100%; display: block; }
+  .shade { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, .6); }
+  .shade.l { left: 0; }
+  .shade.r { right: 0; }
+  .sel {
+    position: absolute; top: 0; bottom: 0; pointer-events: none;
+    border-top: 3px solid var(--accent); border-bottom: 3px solid var(--accent);
+  }
+  .handle {
+    position: absolute; top: -3px; bottom: -3px; width: 14px; background: var(--accent);
+    cursor: ew-resize; pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  }
+  .handle::after { content: ""; width: 2px; height: 18px; border-radius: 1px; background: var(--accent-text); opacity: .8; }
+  .handle.start { right: 100%; border-radius: 6px 0 0 6px; }
+  .handle.end { left: 100%; border-radius: 0 6px 6px 0; }
+  .playhead {
+    position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; pointer-events: none;
+    background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5);
+  }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .readout { font-variant-numeric: tabular-nums; font-size: 14px; }
+  .check:has(input:disabled) { opacity: .5; }
+  .btn-sm {
+    font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--input); color: var(--text);
+  }
+  button[type=submit] {
+    font: inherit; font-weight: 600; padding: 10px; border: none; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button[type=submit]:disabled { opacity: .6; cursor: progress; }
+  .result { font-size: 14px; min-height: 1.5em; }
+  .result.ok { color: var(--ok); }
+  .result.err { color: var(--err); white-space: pre-wrap; }
+  .result a { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Simple Media App</h1>
+  <p class="sub">Everything runs locally on your machine. Reads .mov, .mp4 and more; saves MP4, MOV, MKV or WebM.</p>
+
+  <nav>
+    <button data-tab="image" class="active">Compress image</button>
+    <button data-tab="vcompress">Compress video</button>
+    <button data-tab="edit">Trim, speed &amp; convert</button>
+  </nav>
+
+  <form id="image" class="active" data-url="/api/image/compress">
+    <label>Image <input type="file" name="file" accept="image/*" required></label>
+    <label>Quality: <span data-out="quality">75</span>
+      <input type="range" name="quality" min="10" max="100" value="75">
+      <span class="hint">Lower is smaller. 70–80 is usually indistinguishable. For PNG, below 95 reduces colors (lossy); 95+ is lossless.</span>
+    </label>
+    <div class="row">
+      <label>Max width (px) <input type="number" name="max_width" min="1" placeholder="Keep original"></label>
+      <label>Output format
+        <select name="format">
+          <option value="same">Same as input</option>
+          <option value="jpg">JPEG</option>
+          <option value="webp">WebP</option>
+          <option value="png">PNG</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Compress</button>
+    <div class="result"></div>
+  </form>
+
+  <form id="vcompress" data-url="/api/video/compress">
+    <label>Video <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required></label>
+    <label>Compression (CRF): <span data-out="crf">28</span>
+      <input type="range" name="crf" min="18" max="40" value="28">
+      <span class="hint">Higher is smaller with lower quality. 23 is high quality, 28 is a good default.</span>
+    </label>
+    <label>Max resolution
+      <select name="max_height">
+        <option value="">Keep original</option>
+        <option value="2160">4K (2160p)</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+      </select>
+    </label>
+    <button type="submit">Compress</button>
+    <div class="result"></div>
+  </form>
+
+  <form id="edit" data-url="/api/video/trim">
+    <label>Video <input type="file" name="file" accept=".mov,.mp4,.m4v,video/*" required></label>
+    <div class="editor">
+      <video controls playsinline></video>
+      <div class="timeline">
+        <div class="track">
+          <div class="film"><canvas></canvas><div class="shade l"></div><div class="shade r"></div></div>
+          <div class="sel">
+            <div class="handle start" data-handle="start" title="Drag to set the start"></div>
+            <div class="handle end" data-handle="end" title="Drag to set the end"></div>
+          </div>
+          <div class="playhead"></div>
+        </div>
+      </div>
+      <div class="readout"></div>
+      <div class="toolbar">
+        <button type="button" class="btn-sm" data-mark="start">Set start here (I)</button>
+        <button type="button" class="btn-sm" data-mark="end">Set end here (O)</button>
+        <button type="button" class="btn-sm" data-action="play-sel">▶ Play selection</button>
+        <button type="button" class="btn-sm" data-action="reset">Reset</button>
+      </div>
+      <span class="hint">Drag the handles to choose the part to keep. Click the strip to move the playhead.</span>
+    </div>
+    <div class="manual">
+      <span class="hint">Your browser can't preview this video, so enter the times by hand. Exporting still works.
+        Leave both empty to keep the whole video (e.g. to only convert it).</span>
+      <div class="row">
+        <label>Start <input name="start" placeholder="0 or 00:00:05.5"></label>
+        <label>End <input name="end" placeholder="End of video"></label>
+      </div>
+    </div>
+    <label>Speed
+      <div class="chips">
+        <button type="button" data-speed="1" class="active">1×</button>
+        <button type="button" data-speed="1.25">1.25×</button>
+        <button type="button" data-speed="1.5">1.5×</button>
+        <button type="button" data-speed="2">2×</button>
+        <button type="button" data-speed="3">3×</button>
+        <button type="button" data-speed="4">4×</button>
+      </div>
+    </label>
+    <label>Custom factor <input type="number" name="factor" min="0.25" max="4" step="0.05" value="1">
+      <span class="hint">0.25–4. Values below 1 slow the video down. Audio pitch is preserved. The preview plays at this speed.</span>
+    </label>
+    <label>Output format
+      <select name="format">
+        <option value="mp4">MP4 (H.264, plays everywhere)</option>
+        <option value="mov">MOV (H.264, for Apple apps)</option>
+        <option value="mkv">MKV (H.264)</option>
+        <option value="webm">WebM (VP9 + Opus, for the web)</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="fast"> Fast mode (no re-encode, cuts snap to keyframes; only at 1×)</label>
+    <span class="hint">Fast mode copies the streams only if they fit the chosen format. If not, the video is re-encoded.</span>
+    <button type="submit">Export</button>
+    <div class="result"></div>
+  </form>
+</main>
+
+<script>
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// Tabs
+$$("nav button").forEach(btn => btn.addEventListener("click", () => {
+  $$("nav button").forEach(b => b.classList.toggle("active", b === btn));
+  $$("form").forEach(f => f.classList.toggle("active", f.id === btn.dataset.tab));
+}));
+
+// Live slider values
+$$("input[type=range]").forEach(r => {
+  const out = $(`[data-out="${r.name}"]`, r.form);
+  r.addEventListener("input", () => out.textContent = r.value);
+});
+
+// Trim & speed editor
+const fmtTime = s => {
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = (s % 60).toFixed(2).padStart(5, "0");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${sec}`;
+};
+const fmtLen = s => s < 60 ? `${s.toFixed(2)} s` : fmtTime(s);
+const once = (el, ev) => new Promise((resolve, reject) => {
+  el.addEventListener(ev, resolve, { once: true });
+  el.addEventListener("error", reject, { once: true });
+});
+
+const edit = $("#edit");
+const video = $("video", edit);
+const timeline = $(".timeline", edit), track = $(".track", edit), film = $("canvas", edit);
+const sel = $(".sel", edit), shadeL = $(".shade.l", edit), shadeR = $(".shade.r", edit), playhead = $(".playhead", edit);
+const startInput = $("[name=start]", edit), endInput = $("[name=end]", edit);
+const factorInput = $("[name=factor]", edit), fastBox = $("[name=fast]", edit), readout = $(".readout", edit);
+const MIN_GAP = 0.1;  // seconds; keeps the handles from crossing
+let dur = 0, start = 0, end = 0;  // dur is 0 while there is no previewable video
+let stopAt = null, filmToken = 0;
+
+const pct = t => `${dur ? t / dur * 100 : 0}%`;
+const clamp = (t, lo, hi) => Math.min(hi, Math.max(lo, t));
+
+function render() {
+  if (!dur) return;
+  sel.style.left = shadeL.style.width = pct(start);
+  sel.style.width = pct(end - start);
+  shadeR.style.left = pct(end);
+  shadeR.style.right = "0";
+  startInput.value = fmtTime(start);
+  endInput.value = fmtTime(end);
+  const factor = +factorInput.value || 1, len = end - start;
+  readout.textContent = `Start ${fmtTime(start)} · End ${fmtTime(end)} · ${fmtLen(len)}`
+    + (factor !== 1 ? ` → ${fmtLen(len / factor)} at ${factor}×` : "");
+}
+const drawPlayhead = () => { playhead.style.left = pct(video.currentTime); };
+
+function setStart(t) { start = clamp(t, 0, end - MIN_GAP); render(); }
+function setEnd(t) { end = clamp(t, start + MIN_GAP, dur); render(); }
+
+// Filmstrip: seek an offscreen copy of the video and paint one frame per tile.
+async function drawFilm(url, token) {
+  const ctx = film.getContext("2d");
+  const w = film.width = Math.round(film.clientWidth * devicePixelRatio);
+  const h = film.height = Math.round(film.clientHeight * devicePixelRatio);
+  const v = Object.assign(document.createElement("video"), { muted: true, playsInline: true, preload: "auto", src: url });
+  try {
+    await once(v, "loadeddata");
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const n = Math.max(1, Math.round(w / (h * vw / vh)));
+    const tw = w / n, scale = Math.max(tw / vw, h / vh), sw = tw / scale, sh = h / scale;
+    for (let i = 0; i < n; i++) {
+      v.currentTime = (i + 0.5) * dur / n;
+      await once(v, "seeked");
+      if (token !== filmToken) return;
+      ctx.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, i * tw, 0, tw, h);
+    }
+  } finally {
+    v.removeAttribute("src");
+    v.load();
+  }
+}
+
+function showManual() {
+  dur = 0;
+  edit.classList.remove("has-preview");
+  edit.classList.add("no-preview");
+  startInput.value = "";
+  endInput.value = "";
+}
+
+$("[name=file]", edit).addEventListener("change", e => {
+  const f = e.target.files[0];
+  dur = 0;
+  filmToken++;
+  edit.classList.remove("has-preview", "no-preview");
+  film.getContext("2d").clearRect(0, 0, film.width, film.height);
+  if (video.src) URL.revokeObjectURL(video.src);
+  if (!f) { video.removeAttribute("src"); video.load(); return; }
+  video.src = URL.createObjectURL(f);
+});
+video.addEventListener("loadedmetadata", () => {
+  if (!isFinite(video.duration) || !video.duration) return showManual();
+  dur = video.duration;
+  start = 0;
+  end = dur;
+  edit.classList.add("has-preview");
+  render();
+  drawPlayhead();
+  drawFilm(video.src, filmToken).catch(() => {});  // thumbnails are optional
+});
+// Some codecs (e.g. HEVC .mov in Chrome) can't be previewed; exporting still works.
+video.addEventListener("error", () => { if (video.getAttribute("src")) showManual(); });
+
+// Playhead + "play selection" (checked every frame so it stops exactly at the end handle).
+function tick() {
+  drawPlayhead();
+  if (stopAt !== null && video.currentTime >= stopAt) {
+    video.pause();
+    video.currentTime = stopAt;
+    stopAt = null;
+  }
+  if (!video.paused) requestAnimationFrame(tick);
+}
+video.addEventListener("play", () => requestAnimationFrame(tick));
+video.addEventListener("pause", () => { stopAt = null; });
+video.addEventListener("seeked", drawPlayhead);
+video.addEventListener("timeupdate", drawPlayhead);
+
+// Dragging: a handle moves that edge, anywhere else scrubs the playhead.
+const timeAt = x => {
+  const r = track.getBoundingClientRect();
+  return clamp((x - r.left) / r.width * dur, 0, dur);
+};
+let drag = null, grab = 0;
+function onDrag(e) {
+  const t = timeAt(e.clientX) + grab;
+  if (drag === "start") { setStart(t); video.currentTime = start; }
+  else if (drag === "end") { setEnd(t); video.currentTime = end; }
+  else video.currentTime = clamp(t, 0, dur);
+}
+timeline.addEventListener("pointerdown", e => {
+  if (!dur || e.button !== 0) return;
+  drag = e.target.closest("[data-handle]")?.dataset.handle || "seek";
+  const t = timeAt(e.clientX);
+  grab = drag === "start" ? start - t : drag === "end" ? end - t : 0;
+  timeline.setPointerCapture(e.pointerId);
+  video.pause();
+  onDrag(e);
+});
+timeline.addEventListener("pointermove", e => { if (drag) onDrag(e); });
+timeline.addEventListener("pointerup", () => { drag = null; });
+timeline.addEventListener("pointercancel", () => { drag = null; });
+
+const mark = which => (which === "start" ? setStart : setEnd)(video.currentTime);
+$$("[data-mark]", edit).forEach(b => b.addEventListener("click", () => mark(b.dataset.mark)));
+$("[data-action=play-sel]", edit).addEventListener("click", () => {
+  video.currentTime = start;
+  stopAt = end;
+  video.play();
+});
+$("[data-action=reset]", edit).addEventListener("click", () => { start = 0; end = dur; render(); });
+document.addEventListener("keydown", e => {
+  if (!dur || !edit.classList.contains("active") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.matches("input, select, textarea")) return;
+  const which = { i: "start", o: "end" }[e.key.toLowerCase()];
+  if (!which) return;
+  e.preventDefault();
+  mark(which);
+});
+
+// Speed: chips + custom factor. Fast mode can't retime, so it's only offered at 1×.
+const chips = $$("[data-speed]", edit);
+function onSpeed() {
+  const f = +factorInput.value;
+  chips.forEach(c => c.classList.toggle("active", +c.dataset.speed === f));
+  fastBox.disabled = f !== 1;
+  if (fastBox.disabled) fastBox.checked = false;
+  if (f >= 0.25 && f <= 4) video.playbackRate = video.defaultPlaybackRate = f;
+  render();
+}
+chips.forEach(c => c.addEventListener("click", () => { factorInput.value = c.dataset.speed; onSpeed(); }));
+factorInput.addEventListener("input", onSpeed);
+
+// Submit
+const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : (n / 1e3).toFixed(0) + " KB";
+const lastUrls = new Map();
+
+$$("form").forEach(form => form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const result = $(".result", form), btn = $("button[type=submit]", form);
+  const data = new FormData(form);
+  for (const [k, v] of [...data]) if (v === "") data.delete(k);  // unset optional fields
+  if (form.id === "edit") {
+    data.set("precise", data.has("fast") ? "false" : "true");
+    data.delete("fast");
+    // Whole video selected: send no times, so the server converts without trimming.
+    if (dur && start <= 0 && end >= dur - 0.01) { data.delete("start"); data.delete("end"); }
+  }
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Processing…";
+  result.className = "result";
+  result.textContent = "";
+  try {
+    const res = await fetch(form.dataset.url, { method: "POST", body: data });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = Array.isArray(body.detail) ? body.detail.map(d => d.msg).join("; ") : body.detail;
+      throw new Error(detail || `Request failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/.exec(res.headers.get("Content-Disposition") || "")?.[1];
+    const filename = name ? decodeURIComponent(name) : "result";
+    if (lastUrls.has(form)) URL.revokeObjectURL(lastUrls.get(form));
+    const url = URL.createObjectURL(blob);
+    lastUrls.set(form, url);
+
+    const before = +res.headers.get("X-Original-Size"), after = +res.headers.get("X-Result-Size");
+    const pct = before ? Math.round((1 - after / before) * 100) : 0;
+    const change = pct >= 0 ? `${pct}% smaller` : `${-pct}% larger`;
+    result.className = "result ok";
+    result.innerHTML = "";
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename, textContent: `Download ${filename}` });
+    result.append(a, ` — ${fmtSize(before)} → ${fmtSize(after)} (${change})`);
+  } catch (err) {
+    result.className = "result err";
+    result.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}));
+</script>
+</body>
+</html>
